@@ -123,43 +123,57 @@ export default function App() {
     });
 
     // Stage 2: Calculate the "Lost Opportunity" (Gap)
-    // The goal is to ensure: sum(individual_targets) / total_planned_hours = targets.asr_hod
+    // The goal is to hit the EXACT store target regardless of planned vs budgeted hours
     const totalHours = initial.reduce((s, e) => s + e.planned_hours, 0);
-    const targetTotalAsr = targets.asr_hod * totalHours;
+    
+    // We anchor to the absolute targets entered in the top grid
+    const targetTotalAsr = targets.asr;
+    const targetTotalAsrs = targets.asr_s;
+    const targetTotalApf = targets.apf;
+    const targetTotalObrat = targets.obrat;
+    const targetTotalCct = targets.cct;
     
     const currentTotalAsr = initial.reduce((s, e) => s + (e.baseAsr * e.correctionScale), 0);
-    // Gap can be positive (increase targets) or negative (decrease if over-efficient) to reach the exact efficiency
     const asrGap = targetTotalAsr - currentTotalAsr;
 
     const currentTotalAsrs = initial.reduce((s, e) => s + (e.baseAsrS * e.correctionScale), 0);
-    // For ASRs, we still anchor to the absolute targets.asr_s as per current UI inputs
-    const asrsGap = Math.max(0, targets.asr_s - currentTotalAsrs);
+    const asrsGap = targetTotalAsrs - currentTotalAsrs;
 
-    // Find "Prodejce" who will absorb the gap
-    // Condition: role must be 'Prodejce' AND share must be > 0 (to honor 0% = 0 rule)
-    const asrReceivers = initial.filter(e => e.role === 'Prodejce' && e.shares.asr > 0);
+    const currentTotalApf = initial.reduce((s, e) => s + (e.baseApf * e.correctionScale), 0);
+    const apfGap = targetTotalApf - currentTotalApf;
+
+    const currentTotalObrat = initial.reduce((s, e) => s + (e.baseObrat * e.correctionScale), 0);
+    const obratGap = targetTotalObrat - currentTotalObrat;
+
+    const currentTotalCct = initial.reduce((s, e) => s + (e.baseCct * e.correctionScale), 0);
+    const cctGap = targetTotalCct - currentTotalCct;
+
+    // Find "Prodejce" (or targeted roles) who will absorb the gap
+    const asrReceivers = initial.filter(e => (e.role === 'STL' || e.role === 'Prodejce') && e.shares.asr > 0);
     const asrGapPerReceiver = asrReceivers.length > 0 ? (asrGap / asrReceivers.length) : 0;
 
-    const asrsReceivers = initial.filter(e => e.role === 'Prodejce' && e.shares.asr_s > 0);
+    const asrsReceivers = initial.filter(e => (e.role === 'STL' || e.role === 'Prodejce') && e.shares.asr_s > 0);
     const asrsGapPerReceiver = asrsReceivers.length > 0 ? (asrsGap / asrsReceivers.length) : 0;
 
+    const apfReceivers = initial.filter(e => (e.role === 'STL' || e.role === 'Prodejce') && e.shares.apf > 0);
+    const apfGapPerReceiver = apfReceivers.length > 0 ? (apfGap / apfReceivers.length) : 0;
+
     // Stage 3: Final distribution and rounding
-    return initial.map((emp): EmployeeTarget => {
-      const receivesAsrGap = emp.role === 'Prodejce' && emp.shares.asr > 0;
-      const receivesAsrsGap = emp.role === 'Prodejce' && emp.shares.asr_s > 0;
+    const result = initial.map((emp): EmployeeTarget => {
+      const receivesAsrGap = (emp.role === 'STL' || emp.role === 'Prodejce') && emp.shares.asr > 0;
+      const receivesAsrsGap = (emp.role === 'STL' || emp.role === 'Prodejce') && emp.shares.asr_s > 0;
+      const receivesApfGap = (emp.role === 'STL' || emp.role === 'Prodejce') && emp.shares.apf > 0;
       
-      // Initial calculated value BEFORE rounding
       let indAsr = (emp.baseAsr * emp.correctionScale) + (receivesAsrGap ? asrGapPerReceiver : 0);
       let indAsrS = (emp.baseAsrS * emp.correctionScale) + (receivesAsrsGap ? asrsGapPerReceiver : 0);
-      let indApf = emp.baseApf * emp.correctionScale;
-      let indObrat = emp.baseObrat * emp.correctionScale;
-      let indCct = emp.baseCct * emp.correctionScale;
+      let indApf = (emp.baseApf * emp.correctionScale) + (receivesApfGap ? apfGapPerReceiver : 0);
+      let indObrat = (emp.baseObrat * emp.correctionScale) + (receivesAsrGap ? (obratGap / asrReceivers.length) : 0);
+      let indCct = (emp.baseCct * emp.correctionScale) + (receivesAsrGap ? (cctGap / asrReceivers.length) : 0);
 
       // Strict Enforcement: 0% share = 0 target
       if (emp.shares.asr === 0) indAsr = 0;
       if (emp.shares.asr_s === 0) indAsrS = 0;
       if (emp.shares.apf === 0) indApf = 0;
-      // Note: Obrat and CCT use ASR share as fallback in this implementation
       if (emp.shares.asr === 0) {
         indObrat = 0;
         indCct = 0;
@@ -167,19 +181,55 @@ export default function App() {
 
       return {
         ...emp,
-        obrat: Math.ceil(indObrat),
-        asr: Math.ceil(indAsr),
-        asr_s: Math.ceil(indAsrS),
-        apf: Math.ceil(indApf),
-        cct: Math.ceil(indCct),
+        obrat: Math.round(indObrat),
+        asr: Math.round(indAsr),
+        asr_s: Math.round(indAsrS),
+        apf: Math.round(indApf),
+        cct: Math.round(indCct),
         ars: indAsr > 0 ? (indAsrS / indAsr) * 100 : 0,
-        obrat_hod: emp.planned_hours > 0 ? Math.ceil(indObrat / emp.planned_hours) : 0,
-        asr_hod: emp.planned_hours > 0 ? Math.ceil(indAsr / emp.planned_hours) : 0,
-        asrs_hod: emp.planned_hours > 0 ? Math.ceil(indAsrS / emp.planned_hours) : 0,
+        obrat_hod: emp.planned_hours > 0 ? Math.round(indObrat / emp.planned_hours) : 0,
+        asr_hod: emp.planned_hours > 0 ? Math.round(indAsr / emp.planned_hours) : 0,
+        asrs_hod: emp.planned_hours > 0 ? Math.round(indAsrS / emp.planned_hours) : 0,
         share_obrat: emp.shares.asr,
         share_asr: emp.shares.asr,
       };
     });
+
+    // Final reconciliation to ensure the sum of rounded values exactly matches the target
+    const applyReconciliation = (arr: EmployeeTarget[], field: 'asr' | 'asr_s' | 'apf' | 'obrat', targetVal: number) => {
+      const currentSum = arr.reduce((s, e) => s + e[field], 0);
+      const diff = Math.round(targetVal) - currentSum;
+      if (diff !== 0) {
+        // Apportion to the first receiver with non-zero share or anyone targeted
+        const shareField = field === 'obrat' ? 'asr' : (field === 'asr' ? 'asr' : field === 'asr_s' ? 'asr_s' : 'apf');
+        let targetInd = arr.findIndex(e => 
+          (e.role.toUpperCase() === 'STL' || e.role.toUpperCase() === 'PRODEJCE') && 
+          (e.shares[shareField] > 0)
+        );
+        
+        // Fallback to any active employee if no prodejce/STL found
+        if (targetInd === -1) {
+          targetInd = arr.findIndex(e => e.shares[shareField] > 0);
+        }
+        
+        if (targetInd !== -1) {
+          arr[targetInd][field] += diff;
+          // Recalculate derived efficiencies for this specific employee
+          if (arr[targetInd].planned_hours > 0) {
+            if (field === 'asr') arr[targetInd].asr_hod = Math.round(arr[targetInd].asr / arr[targetInd].planned_hours);
+            if (field === 'asr_s') arr[targetInd].asrs_hod = Math.round(arr[targetInd].asr_s / arr[targetInd].planned_hours);
+            if (field === 'obrat') arr[targetInd].obrat_hod = Math.round(arr[targetInd].obrat / arr[targetInd].planned_hours);
+          }
+        }
+      }
+    };
+
+    applyReconciliation(result, 'asr', targets.asr);
+    applyReconciliation(result, 'asr_s', targets.asr_s);
+    applyReconciliation(result, 'apf', targets.apf);
+    applyReconciliation(result, 'obrat', targets.obrat);
+
+    return result;
   }, [targets, employees, employeePlannedHours, employeeStandardHours, employeeShares]);
 
   const handleTargetChange = (field: keyof StoreTargets, value: string) => {
@@ -262,6 +312,21 @@ export default function App() {
   const handleReorder = (newOrder: Employee[]) => {
     setEmployees(newOrder);
   };
+
+  const footerTotals = useMemo(() => {
+    const all = calculatedTargets;
+    // For averages, only include people who are actually planned to work (hours > 0)
+    // and specifically include STL, Prodejce, Skladník, Brigádník if they have hours > 0
+    const activeForAverage = all.filter(e => e.planned_hours > 0);
+    
+    return {
+      asr: all.reduce((s, e) => s + (e.asr || 0), 0),
+      asr_s: all.reduce((s, e) => s + (e.asr_s || 0), 0),
+      apf: all.reduce((s, e) => s + (e.apf || 0), 0),
+      asr_hod: activeForAverage.length > 0 ? activeForAverage.reduce((s, e) => s + e.asr_hod, 0) / activeForAverage.length : 0,
+      asrs_hod: activeForAverage.length > 0 ? activeForAverage.reduce((s, e) => s + e.asrs_hod, 0) / activeForAverage.length : 0,
+    };
+  }, [calculatedTargets]);
 
   const totalPlannedObrat = calculatedTargets.reduce((s, e) => s + e.obrat, 0);
   const totalPlannedAsr = calculatedTargets.reduce((s, e) => s + e.asr, 0);
@@ -541,6 +606,29 @@ export default function App() {
                   );
                 })}
               </Reorder.Group>
+              <tfoot className="sticky bottom-0 bg-white border-t-2 border-slate-200 z-10 shadow-[0_-2px_6px_rgba(0,0,0,0.05)]">
+                <tr className="font-bold text-text-main divide-x divide-slate-100">
+                  <td colSpan={8} className="px-5 py-3 text-right text-text-muted uppercase text-[10px] tracking-wider bg-slate-50/50">
+                    Kontrolní součty / průměry
+                  </td>
+                  <td className="px-5 py-3 text-right text-accent whitespace-nowrap bg-blue-50/20">
+                    {footerTotals.asr.toLocaleString('cs-CZ')}
+                  </td>
+                  <td className="px-5 py-3 text-right text-blue-600 whitespace-nowrap">
+                    {footerTotals.asr_s.toLocaleString('cs-CZ')}
+                  </td>
+                  <td className="px-5 py-3 text-right whitespace-nowrap">
+                    {footerTotals.apf.toLocaleString('cs-CZ')}
+                  </td>
+                  <td className="px-5 py-3 text-right text-success whitespace-nowrap bg-green-50/10">
+                    {Math.round(footerTotals.asr_hod).toLocaleString('cs-CZ')} Kč
+                  </td>
+                  <td className="px-5 py-3 text-right text-amber-500 whitespace-nowrap bg-amber-50/10">
+                    {Math.round(footerTotals.asrs_hod).toLocaleString('cs-CZ')} Kč
+                  </td>
+                  <td className="bg-slate-50/50"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </section>
@@ -552,7 +640,7 @@ export default function App() {
           Rozdělené ASR: <strong className="text-success">{totalPlannedAsr.toLocaleString('cs-CZ')} Kč</strong>
         </div>
         <div className="flex items-center gap-2">
-          Naplánované hodiny: <strong className="text-secondary">{totalHours.toFixed(1)} h</strong>
+          Naplánované hodiny: <strong className={cn(totalHours <= targets.hodiny ? "text-success" : "text-red-400")}>{totalHours.toFixed(1)} h</strong>
         </div>
         <div className="flex items-center gap-2">
           Skutečný ASR/hod: <strong className="text-success">
