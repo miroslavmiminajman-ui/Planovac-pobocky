@@ -11,9 +11,13 @@ import {
   Mail,
   Percent,
   Briefcase,
-  AlertCircle
+  AlertCircle,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
+  GripVertical
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './lib/utils';
 import { StoreTargets, Employee, EmployeeShares, EmployeeTarget } from './types';
 
@@ -44,6 +48,12 @@ const HARDCODED_EMPLOYEES: Employee[] = [
 ];
 
 export default function App() {
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    const saved = localStorage.getItem('planner_employees_v5');
+    if (saved) return JSON.parse(saved);
+    return HARDCODED_EMPLOYEES;
+  });
+
   const [targets, setTargets] = useState<StoreTargets>(() => {
     const saved = localStorage.getItem('planner_targets_v4');
     return saved ? JSON.parse(saved) : INITIAL_TARGETS;
@@ -68,6 +78,10 @@ export default function App() {
   });
 
   useEffect(() => {
+    localStorage.setItem('planner_employees_v5', JSON.stringify(employees));
+  }, [employees]);
+
+  useEffect(() => {
     localStorage.setItem('planner_targets_v4', JSON.stringify(targets));
   }, [targets]);
 
@@ -85,7 +99,7 @@ export default function App() {
 
   const calculatedTargets = useMemo(() => {
     // Stage 1: Initial targets with sick/vacation correction
-    const initial = HARDCODED_EMPLOYEES.map(emp => {
+    const initial = employees.map(emp => {
       const shares = employeeShares[emp.id] || { asr: 0, asr_s: 0, apf: 0 };
       const plannedHours = employeePlannedHours[emp.id] || 0;
       const stdHours = employeeStandardHours[emp.id] || 160;
@@ -166,7 +180,7 @@ export default function App() {
         share_asr: emp.shares.asr,
       };
     });
-  }, [targets, employeePlannedHours, employeeStandardHours, employeeShares]);
+  }, [targets, employees, employeePlannedHours, employeeStandardHours, employeeShares]);
 
   const handleTargetChange = (field: keyof StoreTargets, value: string) => {
     const numVal = parseFloat(value) || 0;
@@ -214,20 +228,55 @@ export default function App() {
     setEmployeeStandardHours(prev => ({ ...prev, [id]: parseFloat(value) || 0 }));
   };
 
+  const handleEmployeeUpdate = (id: string, field: keyof Employee, value: string) => {
+    setEmployees(prev => prev.map(emp => 
+      emp.id === id ? { ...emp, [field]: value } : emp
+    ));
+  };
+
+  const handleAddEmployee = () => {
+    const newId = crypto.randomUUID();
+    setEmployees(prev => [...prev, {
+      id: newId,
+      name: 'Nový člen',
+      role: 'Prodejce',
+      standard_hours: 160
+    }]);
+    // Initialize standard hours for the new member
+    setEmployeeStandardHours(prev => ({ ...prev, [newId]: 160 }));
+  };
+
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleDeleteEmployee = (id: string) => {
+    if (deleteConfirmId === id) {
+      setEmployees(prev => prev.filter(emp => emp.id !== id));
+      setDeleteConfirmId(null);
+    } else {
+      setDeleteConfirmId(id);
+      // Auto cancel after 3 seconds
+      setTimeout(() => setDeleteConfirmId(prev => prev === id ? null : prev), 3000);
+    }
+  };
+
+  const handleReorder = (newOrder: Employee[]) => {
+    setEmployees(newOrder);
+  };
+
   const totalPlannedObrat = calculatedTargets.reduce((s, e) => s + e.obrat, 0);
   const totalPlannedAsr = calculatedTargets.reduce((s, e) => s + e.asr, 0);
   const totalHours = calculatedTargets.reduce((s, e) => s + e.planned_hours, 0);
 
-  const totalAsrShare = HARDCODED_EMPLOYEES.reduce((s, e) => s + (employeeShares[e.id]?.asr || 0), 0);
-  const totalAsrsShare = HARDCODED_EMPLOYEES.reduce((s, e) => s + (employeeShares[e.id]?.asr_s || 0), 0);
-  const totalApfShare = HARDCODED_EMPLOYEES.reduce((s, e) => s + (employeeShares[e.id]?.apf || 0), 0);
+  const totalAsrShare = employees.reduce((s, e) => s + (employeeShares[e.id]?.asr || 0), 0);
+  const totalAsrsShare = employees.reduce((s, e) => s + (employeeShares[e.id]?.asr_s || 0), 0);
+  const totalApfShare = employees.reduce((s, e) => s + (employeeShares[e.id]?.apf || 0), 0);
 
   return (
     <div className="min-h-screen flex flex-col bg-bg text-text-main font-sans">
       {/* Header */}
       <header className="bg-white px-6 py-4 border-b border-border flex justify-between items-center shrink-0">
         <div className="text-xl font-extrabold text-accent tracking-tight uppercase">
-          Planner // Prodejna
+          CÍLE POBOČKY
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-6 text-sm font-medium text-text-muted">
@@ -321,8 +370,16 @@ export default function App() {
               <Users size={18} className="text-accent" />
               Plánování týmu
             </h2>
-            <div className="text-xs text-text-muted font-medium">
-              Celkem naplánováno: {totalHours.toFixed(1)} / {targets.hodiny} h
+            <div className="flex items-center gap-4">
+              <div className="text-xs text-text-muted font-medium">
+                Celkem naplánováno: {totalHours.toFixed(1)} / {targets.hodiny} h
+              </div>
+              <button 
+                onClick={handleAddEmployee}
+                className="px-3 py-1.5 rounded-md bg-blue-50 text-accent text-xs font-bold hover:bg-blue-100 transition-colors flex items-center gap-1.5 border border-blue-100"
+              >
+                + Přidat člena
+              </button>
             </div>
           </div>
           
@@ -330,6 +387,7 @@ export default function App() {
             <table className="w-full text-left border-collapse text-[13px]">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-slate-50 border-b border-border">
+                  <th className="w-8 px-2"></th>
                   <th className="px-5 py-3 font-semibold text-text-muted">Člen týmu</th>
                   <th className="px-5 py-3 font-semibold text-text-muted">Role</th>
                   <th className="px-5 py-2 font-semibold text-text-muted text-center bg-blue-50/50">Podíl<br/>ASR %</th>
@@ -342,29 +400,60 @@ export default function App() {
                   <th className="px-5 py-3 font-semibold text-text-muted text-right font-bold">Cíl ApF</th>
                   <th className="px-5 py-3 font-semibold text-text-muted text-right text-success font-bold">ASR/hod</th>
                   <th className="px-5 py-3 font-semibold text-text-muted text-right text-amber-500 font-bold">ASRs/hod</th>
+                  <th className="px-5 py-3 w-10"></th>
                 </tr>
               </thead>
-              <tbody>
-                {calculatedTargets.map((emp) => {
+              <Reorder.Group 
+                as="tbody" 
+                axis="y" 
+                values={employees} 
+                onReorder={handleReorder}
+              >
+                {calculatedTargets.map((emp, index) => {
                   const isTargeted = emp.role === 'STL' || emp.role === 'Prodejce';
+                  const sourceEmp = employees.find(e => e.id === emp.id)!;
+                  const isDeleting = deleteConfirmId === emp.id;
+                  
                   return (
-                    <tr 
-                      key={emp.id}
+                    <Reorder.Item 
+                      as="tr" 
+                      key={emp.id} 
+                      value={sourceEmp}
                       className={cn(
-                        "border-b border-slate-100 transition-colors",
+                        "border-b border-slate-100 transition-colors group relative",
                         !isTargeted ? "bg-slate-50/50 text-text-muted" : "bg-white hover:bg-slate-50"
                       )}
                     >
-                      <td className="px-5 py-3 font-bold">{emp.name}</td>
+                      <td className="px-2 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500">
+                        <GripVertical size={16} />
+                      </td>
                       <td className="px-5 py-3">
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
-                          emp.role === 'STL' ? "bg-purple-100 text-purple-800" :
-                          emp.role === 'Prodejce' ? "bg-blue-100 text-blue-800" :
-                          "bg-slate-100 text-slate-600"
-                        )}>
-                          {emp.role}
-                        </span>
+                        <input 
+                          type="text" 
+                          value={emp.name}
+                          onChange={(e) => handleEmployeeUpdate(emp.id, 'name', e.target.value)}
+                          className={cn(
+                            "w-full bg-transparent border-none outline-none font-bold focus:ring-0 p-0",
+                            !isTargeted && "text-text-muted"
+                          )}
+                        />
+                      </td>
+                      <td className="px-5 py-3">
+                        <select 
+                          value={emp.role}
+                          onChange={(e) => handleEmployeeUpdate(emp.id, 'role', e.target.value)}
+                          className={cn(
+                            "appearance-none bg-transparent border-none outline-none text-[10px] font-bold uppercase tracking-wider p-0 pr-2 focus:ring-0 cursor-pointer",
+                            emp.role === 'STL' ? "text-purple-800" :
+                            emp.role === 'Prodejce' ? "text-blue-800" :
+                            "text-slate-600"
+                          )}
+                        >
+                          <option value="STL">STL</option>
+                          <option value="Prodejce">Prodejce</option>
+                          <option value="Skladník">Skladník</option>
+                          <option value="Brigádník">Brigádník</option>
+                        </select>
                       </td>
                       <td className="px-5 py-3 text-center bg-blue-50/30">
                         {isTargeted ? (
@@ -432,10 +521,26 @@ export default function App() {
                       <td className="px-5 py-3 text-right font-bold text-amber-500 whitespace-nowrap">
                         {isTargeted ? `${Math.ceil(emp.asrs_hod).toLocaleString('cs-CZ')} Kč` : '-'}
                       </td>
-                    </tr>
+                      <td className="px-2 py-3">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                          <button 
+                            onClick={() => handleDeleteEmployee(emp.id)}
+                            className={cn(
+                              "p-1.5 rounded transition-all flex items-center gap-1",
+                              isDeleting 
+                                ? "bg-red-500 text-white px-2 text-[10px] font-bold" 
+                                : "hover:bg-red-50 text-red-300 hover:text-red-500"
+                            )}
+                            title={isDeleting ? "Klikněte znovu pro smazání" : "Smazat člena"}
+                          >
+                            {isDeleting ? "SMAZAT?" : <Trash2 size={14} />}
+                          </button>
+                        </div>
+                      </td>
+                    </Reorder.Item>
                   );
                 })}
-              </tbody>
+              </Reorder.Group>
             </table>
           </div>
         </section>

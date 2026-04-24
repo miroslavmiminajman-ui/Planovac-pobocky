@@ -1,5 +1,5 @@
 {
-  "name": "Plánovač Prodejny",
+  "name": "Cíle pobočky",
   "description": "Aplikace pro rozplánování cílů prodejny na jednotlivé členy týmu na základě historického výkonu z XLS reportu.",
   "requestFramePermissions": [],
   "majorCapabilities": []
