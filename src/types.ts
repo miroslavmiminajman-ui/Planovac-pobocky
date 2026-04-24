@@ -37,4 +37,5 @@ export interface EmployeeTarget extends Employee {
   apf: number;
   share_obrat: number;
   share_asr: number;
+  shares: EmployeeShares;
 }

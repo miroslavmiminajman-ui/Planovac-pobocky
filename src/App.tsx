@@ -295,6 +295,7 @@ export default function App() {
             value={targets.asr_hod} 
             onChange={(v) => handleTargetChange('asr_hod', v)}
             suffix="Kč"
+            round
           />
           <MetricInput 
             label="CCT (E-maily)" 
@@ -340,7 +341,7 @@ export default function App() {
                   <th className="px-5 py-3 font-semibold text-text-muted text-right text-blue-600 font-bold">Cíl ASRs</th>
                   <th className="px-5 py-3 font-semibold text-text-muted text-right font-bold">Cíl ApF</th>
                   <th className="px-5 py-3 font-semibold text-text-muted text-right text-success font-bold">ASR/hod</th>
-                  <th className="px-5 py-3 font-semibold text-text-muted text-right text-blue-500 font-bold">ASRs/hod</th>
+                  <th className="px-5 py-3 font-semibold text-text-muted text-right text-amber-500 font-bold">ASRs/hod</th>
                 </tr>
               </thead>
               <tbody>
@@ -403,14 +404,14 @@ export default function App() {
                           type="number" 
                           value={employeeStandardHours[emp.id] || ''} 
                           onChange={(e) => handleStdHoursChange(emp.id, e.target.value)}
-                          placeholder="160"
+                          placeholder="0"
                           className="w-14 px-2 py-1 rounded border border-border text-right focus:ring-2 focus:ring-accent/20 outline-none text-xs bg-slate-50"
                         />
                       </td>
                       <td className="px-5 py-3 text-right">
                         <input 
                           type="number" 
-                          value={emp.planned_hours || ''} 
+                          value={employeePlannedHours[emp.id] || ''} 
                           onChange={(e) => handlePlannedHoursChange(emp.id, e.target.value)}
                           placeholder="0"
                           className="w-14 px-2 py-1 rounded border border-border text-right focus:ring-2 focus:ring-accent/20 outline-none text-xs"
@@ -428,7 +429,7 @@ export default function App() {
                       <td className="px-5 py-3 text-right font-bold text-success whitespace-nowrap">
                         {isTargeted ? `${Math.ceil(emp.asr_hod).toLocaleString('cs-CZ')} Kč` : '-'}
                       </td>
-                      <td className="px-5 py-3 text-right font-bold text-blue-500 whitespace-nowrap">
+                      <td className="px-5 py-3 text-right font-bold text-amber-500 whitespace-nowrap">
                         {isTargeted ? `${Math.ceil(emp.asrs_hod).toLocaleString('cs-CZ')} Kč` : '-'}
                       </td>
                     </tr>
@@ -450,7 +451,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-2">
           Skutečný ASR/hod: <strong className="text-success">
-            {(totalHours > 0 ? totalPlannedAsr / totalHours : 0).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} Kč
+            {(totalHours > 0 ? Math.round(totalPlannedAsr / totalHours) : 0).toLocaleString('cs-CZ')} Kč
           </strong>
         </div>
         <div className="flex items-center gap-2">
@@ -463,20 +464,27 @@ export default function App() {
   );
 }
 
-function MetricInput({ label, value, onChange, readOnly, suffix }: { 
+function MetricInput({ label, value, onChange, readOnly, suffix, round }: { 
   label: string, 
   value: number, 
   onChange?: (v: string) => void,
   readOnly?: boolean,
-  suffix?: string
+  suffix?: string,
+  round?: boolean
 }) {
+  const displayValue = value === 0 ? '' : (
+    (round || readOnly) 
+      ? Math.round(value) 
+      : (value % 1 === 0 ? value : value.toFixed(2))
+  );
+
   return (
     <div className={cn("p-3 px-4 rounded-lg border border-border shadow-sm", readOnly ? "bg-slate-50" : "bg-white")}>
       <span className="text-[11px] uppercase text-text-muted font-bold tracking-wider block mb-1">{label}</span>
       <div className="flex items-baseline gap-1">
         <input 
           type="number" 
-          value={value === 0 ? '0' : (readOnly ? Math.ceil(value) : (value % 1 === 0 ? value : value.toFixed(2)))} 
+          value={displayValue} 
           onChange={(e) => onChange?.(e.target.value)}
           placeholder="0"
           readOnly={readOnly}
@@ -495,9 +503,11 @@ function exportToExcel(data: EmployeeTarget[]) {
   const worksheet = XLSX.utils.json_to_sheet(data.map(emp => ({
     'Jméno': emp.name,
     'Pozice': emp.role,
-    'Podíl ASR %': emp.share_asr,
-    'Plán. Hodiny': emp.planned_hours,
-    'Smluvní Hodiny': emp.standard_hours,
+    'Podíl ASR %': emp.shares.asr,
+    'Podíl ASRs %': emp.shares.asr_s,
+    'Podíl ApF %': emp.shares.apf,
+    'Smluvní h.': emp.standard_hours,
+    'Plán h.': emp.planned_hours,
     'Cíl ASR': Math.ceil(emp.asr),
     'Cíl ASRs': Math.ceil(emp.asr_s),
     'Cíl ApF': Math.ceil(emp.apf),
